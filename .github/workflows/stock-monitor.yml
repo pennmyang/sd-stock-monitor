@@ -24,11 +24,26 @@ jobs:
     - name: Install dependencies
       run: |
         pip install requests beautifulsoup4
-        
+
+    # Download previous status artifact if it exists
+    - name: Download previous status
+      uses: actions/download-artifact@v4
+      with:
+        name: last-status
+        path: .
+      continue-on-error: true
+
     - name: Check stock status
       env:
         MONITOR_URL: ${{ secrets.MONITOR_URL }}
         SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
         SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
         RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-      run: python stock_monitor.py 
+      run: python stock_monitor.py
+
+    # Upload current status as artifact for next run
+    - name: Upload current status
+      uses: actions/upload-artifact@v4
+      with:
+        name: last-status
+        path: last_status.json 
