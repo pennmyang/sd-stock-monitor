@@ -40,148 +40,106 @@ def send_notification(subject, message):
         return False
 
 def check_stock_status(url):
-    """Check if any Steam Deck models are in stock on the listing page"""
+    """Check if any Steam Deck models are in stock - simplified approach"""
     try:
-        # Headers specifically designed to get desktop version and avoid mobile redirect
+        # Minimal headers to avoid triggering bot detection
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            'DNT': '1',
-            # Force desktop version
-            'Sec-CH-UA': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            'Sec-CH-UA-Mobile': '?0',  # Important: Tell Steam we're NOT mobile
-            'Sec-CH-UA-Platform': '"Windows"',
-            'Viewport-Width': '1920'  # Desktop viewport
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
-        # Use session with cookies to maintain state
-        session = requests.Session()
-        session.headers.update(headers)
+        print(f"🔍 Attempting to fetch Steam page...")
         
-        # First, try to get the desktop version directly
-        desktop_url = url
-        if '?' in desktop_url:
-            desktop_url += '&desktop=1'
-        else:
-            desktop_url += '?desktop=1'
-            
-        print(f"🔍 Requesting desktop version: {desktop_url}")
-        
-        response = session.get(desktop_url, timeout=15, allow_redirects=True)
+        response = requests.get(url, headers=headers, timeout=20)
         response.raise_for_status()
         
+        # Get both HTML content and raw text
         soup = BeautifulSoup(response.content, 'html.parser')
         page_text = soup.get_text().lower()
+        html_content = str(soup).lower()
         
         print(f"🔍 Page title: {soup.title.string if soup.title else 'No title found'}")
         print(f"📄 Response status: {response.status_code}")
-        print(f"📄 Final URL: {response.url}")
         print(f"📄 Content length: {len(response.content)} bytes")
         print(f"📄 Page text length: {len(page_text)} characters")
         
-        # Check if we got mobile version (bad signs)
-        mobile_indicators = [
-            'get the steam mobile app',
-            'view desktop website',
-            'mobile version',
-            'switch to desktop'
+        # Basic verification that we're on a Steam page
+        steam_indicators = [
+            'steam' in page_text,
+            'valve' in page_text or 'valve' in html_content,
+            len(page_text) > 1000  # Minimum content length
         ]
         
-        mobile_detected = any(indicator in page_text for indicator in mobile_indicators)
-        print(f"🔍 Mobile version detected: {mobile_detected}")
-        
-        # Check for desktop/product page indicators (good signs)
-        desktop_indicators = [
-            'steam deck',
-            'certified refurbished',
-            'valve',
-            '£389',
-            '£459',
-            'out of stock',
-            'add to cart'
-        ]
-        
-        desktop_content_score = sum(1 for indicator in desktop_indicators if indicator in page_text)
-        print(f"🔍 Desktop content indicators found: {desktop_content_score}/{len(desktop_indicators)}")
-        
-        # If we got mobile version, show sample and exit
-        if mobile_detected or desktop_content_score < 3:
-            print("❌ Got mobile version or insufficient content")
-            sample_text = page_text[:1500] if len(page_text) > 1500 else page_text
-            print(f"🔍 Page sample (first 1500 chars): {sample_text}")
+        if not any(steam_indicators):
+            print("❌ Not a valid Steam page or insufficient content")
             return "ERROR"
         
-        # Now look for stock indicators (we have desktop version)
-        out_of_stock_variations = [
+        print("✅ Confirmed we're on a Steam page")
+        
+        # Look for ANY indication this is the Steam Deck page
+        deck_indicators = [
+            'deck' in page_text,
+            'refurbished' in page_text,
+            'certified' in page_text
+        ]
+        
+        deck_mentions = sum(1 for indicator in deck_indicators if indicator)
+        print(f"🔍 Steam Deck page indicators: {deck_mentions}/3")
+        
+        if deck_mentions < 2:
+            print("⚠️ This doesn't appear to be the Steam Deck page")
+            # Still try to detect stock status in case we're on a different version
+        
+        # Simple stock detection - look for key phrases anywhere in the content
+        # Check both visible text and HTML (in case text is in attributes, etc.)
+        combined_content = page_text + " " + html_content
+        
+        # Out of stock indicators
+        out_phrases = [
             'out of stock',
             'outofstock', 
             'sold out',
-            'soldout',
             'unavailable',
             'not available',
-            'coming soon'
+            'currently unavailable'
         ]
         
-        in_stock_variations = [
+        # In stock indicators  
+        in_phrases = [
             'add to cart',
             'buy now',
             'purchase',
             'order now',
+            'in stock',
+            'available now',
             'buy',
-            'order',
-            'available now'
+            'add to bag'
         ]
         
-        # Count stock indicators
-        out_of_stock_count = sum(page_text.count(phrase) for phrase in out_of_stock_variations)
-        in_stock_count = sum(page_text.count(phrase) for phrase in in_stock_variations)
+        out_count = sum(combined_content.count(phrase) for phrase in out_phrases)
+        in_count = sum(combined_content.count(phrase) for phrase in in_phrases)
         
-        print(f"🔍 Stock analysis:")
-        print(f"   - Out of stock mentions: {out_of_stock_count}")
-        print(f"   - In stock mentions: {in_stock_count}")
+        print(f"🔍 Stock phrase detection:")
+        print(f"   - Out of stock phrases: {out_count}")
+        print(f"   - In stock phrases: {in_count}")
         
-        # Look for Steam Deck models
-        model_counts = {
-            '512 gb oled': page_text.count('512 gb oled') + page_text.count('512gb oled'),
-            '1tb oled': page_text.count('1tb oled') + page_text.count('1 tb oled'),
-            '64 gb lcd': page_text.count('64 gb lcd') + page_text.count('64gb lcd'),
-            '256 gb lcd': page_text.count('256 gb lcd') + page_text.count('256gb lcd'),
-            '512 gb lcd': page_text.count('512 gb lcd') + page_text.count('512gb lcd')
-        }
-        
-        total_models = sum(count for count in model_counts.values() if count > 0)
-        print(f"🔍 Steam Deck models detected: {total_models}")
-        for model, count in model_counts.items():
-            if count > 0:
-                print(f"   - {model}: {count}")
-        
-        # Check for prices to confirm we have product listings
-        price_mentions = sum(page_text.count(price) for price in ['£389', '£459', '£249', '£279', '£319'])
-        print(f"🔍 Price mentions: {price_mentions}")
+        # Look for price indicators that suggest product listings
+        price_indicators = ['£', '$', '€', 'gbp', 'eur', 'usd']
+        price_count = sum(combined_content.count(price) for price in price_indicators)
+        print(f"🔍 Price indicators found: {price_count}")
         
         # Decision logic
-        if out_of_stock_count >= 3 and total_models >= 2:
-            print(f"✅ Confirmed: {out_of_stock_count} out-of-stock mentions for {total_models} models")
+        if out_count >= 3 and in_count == 0:
+            print(f"✅ Confirmed: {out_count} out-of-stock phrases, no in-stock phrases")
             return "OUT_OF_STOCK"
-        elif in_stock_count > 0 and out_of_stock_count == 0 and total_models >= 2:
-            print(f"✅ Confirmed: {in_stock_count} in-stock mentions, no out-of-stock")
+        elif in_count > 0 and out_count == 0:
+            print(f"✅ Confirmed: {in_count} in-stock phrases, no out-of-stock phrases")
             return "IN_STOCK"
-        elif in_stock_count > 0 and out_of_stock_count > 0 and total_models >= 2:
-            print(f"✅ Mixed stock: {in_stock_count} available, {out_of_stock_count} unavailable")
+        elif in_count > 0 and out_count > 0:
+            print(f"✅ Mixed stock: {in_count} available, {out_count} unavailable")
             return "PARTIAL_STOCK"
         else:
             print("❓ Insufficient data to determine stock status")
-            # Show more context for debugging
-            sample_text = page_text[:2000] if len(page_text) > 2000 else page_text
+            sample_text = combined_content[:2000] if len(combined_content) > 2000 else combined_content
             print(f"🔍 Extended sample: {sample_text}")
             return "UNKNOWN"
             
