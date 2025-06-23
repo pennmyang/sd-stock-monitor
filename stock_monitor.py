@@ -91,57 +91,36 @@ def check_stock_status(url):
         
         # Simple stock detection - look for key phrases anywhere in the content
         # Check both visible text and HTML (in case text is in attributes, etc.)
+        # Binary approach: Just look for "Out of stock" vs anything else
         combined_content = page_text + " " + html_content
         
-        # Out of stock indicators
-        out_phrases = [
-            'out of stock',
-            'outofstock', 
-            'sold out',
-            'unavailable',
-            'not available',
-            'currently unavailable'
-        ]
+        # Count Steam's exact "Out of stock" phrase
+        out_of_stock_count = combined_content.count('out of stock')
         
-        # In stock indicators  
-        in_phrases = [
-            'add to cart',
-            'buy now',
-            'purchase',
-            'order now',
-            'in stock',
-            'available now',
-            'buy',
-            'add to bag'
-        ]
+        print(f"🔍 Binary stock detection:")
+        print(f"   - 'Out of stock' mentions: {out_of_stock_count}")
         
-        out_count = sum(combined_content.count(phrase) for phrase in out_phrases)
-        in_count = sum(combined_content.count(phrase) for phrase in in_phrases)
+        # Verify we're on the Steam Deck page (basic sanity check)
+        steam_deck_mentions = combined_content.count('steam deck')
+        refurbished_mentions = combined_content.count('refurbished')
         
-        print(f"🔍 Stock phrase detection:")
-        print(f"   - Out of stock phrases: {out_count}")
-        print(f"   - In stock phrases: {in_count}")
+        print(f"🔍 Page verification:")
+        print(f"   - Steam Deck page confirmed: {steam_deck_mentions > 0 and refurbished_mentions > 0}")
         
-        # Look for price indicators that suggest product listings
-        price_indicators = ['£', '$', '€', 'gbp', 'eur', 'usd']
-        price_count = sum(combined_content.count(price) for price in price_indicators)
-        print(f"🔍 Price indicators found: {price_count}")
+        if steam_deck_mentions == 0 or refurbished_mentions == 0:
+            print("❌ Not the Steam Deck refurbished page")
+            return "ERROR"
         
-        # Decision logic
-        if out_count >= 3 and in_count == 0:
-            print(f"✅ Confirmed: {out_count} out-of-stock phrases, no in-stock phrases")
+        # Binary decision: Either all out of stock, or something is available
+        if out_of_stock_count >= 5:
+            print(f"📦 All models out of stock ({out_of_stock_count} instances)")
             return "OUT_OF_STOCK"
-        elif in_count > 0 and out_count == 0:
-            print(f"✅ Confirmed: {in_count} in-stock phrases, no out-of-stock phrases")
-            return "IN_STOCK"
-        elif in_count > 0 and out_count > 0:
-            print(f"✅ Mixed stock: {in_count} available, {out_count} unavailable")
-            return "PARTIAL_STOCK"
+        elif out_of_stock_count > 0:
+            print(f"🎉 Some models may be available! (only {out_of_stock_count} showing 'out of stock')")
+            return "IN_STOCK"  # If fewer than 5 are out of stock, something must be available
         else:
-            print("❓ Insufficient data to determine stock status")
-            sample_text = combined_content[:2000] if len(combined_content) > 2000 else combined_content
-            print(f"🔍 Extended sample: {sample_text}")
-            return "UNKNOWN"
+            print(f"🎉 No 'out of stock' found - models likely available!")
+            return "IN_STOCK"
             
     except requests.RequestException as e:
         print(f"❌ Error fetching webpage: {e}")
